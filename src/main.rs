@@ -6,7 +6,7 @@
 
 mod rgb_led;
 
-use crate::rgb_led::RgbLED;
+use crate::rgb_led::RgbLEDs;
 use crate::rgb_led::RGB;
 use defmt::{info, warn};
 use embassy_executor::Spawner;
@@ -120,52 +120,43 @@ async fn main(_spawner: Spawner) {
 
     let led_fut = async {
         //const NUM_LEDS: usize = 16;
-        let mut led = RgbLED::new(peripherals.PIN_20);
+        let mut led = RgbLEDs::new(peripherals.PIN_20);
 
         loop {
             Timer::after_secs(1).await;
+            
 
             led.write_colors(&[
-                RGB::new(0, 128, 255),
-                RGB::new(255, 0, 128),
-                RGB::new(0, 128, 255),
-                RGB::new(255, 0, 128),
-                RGB::new(0, 128, 255),
-                RGB::new(255, 0, 128),
-                RGB::new(0, 128, 255),
-                RGB::new(255, 0, 128),
-                RGB::new(0, 128, 255),
-                RGB::new(255, 0, 128),
-                RGB::new(0, 128, 255),
-                RGB::new(255, 0, 128),
-                RGB::new(0, 128, 255),
-                RGB::new(255, 0, 128),
-                RGB::new(0, 128, 255),
-                RGB::new(255, 0, 128),
+                RGB::new(50, 50, 0),
+                RGB::new(0, 0, 20),
+                RGB::new(50, 50, 0),
+                RGB::new(0, 0, 20),
+                RGB::new(50, 50, 0),
+                RGB::new(0, 0, 20),
+                RGB::new(50, 50, 0),
+                RGB::new(0, 0, 20),
+                RGB::new(50, 50, 0),
+                RGB::new(0, 0, 20),
+                RGB::new(50, 50, 0),
+                RGB::new(0, 0, 20),
+                RGB::new(50, 50, 0),
+                RGB::new(0, 0, 20),
+                RGB::new(50, 50, 0),
+                RGB::new(0, 0, 20),
+                RGB::new(50, 50, 0),
+                RGB::new(0, 0, 20),
+                RGB::new(50, 50, 0),
+                RGB::new(0, 0, 20),
             ])
             .await;
-
-            info!("sdfhsd");
 
             Timer::after_secs(1).await;
 
             led.write_colors(&[
-                RGB::new(255, 0, 128),
-                RGB::new(0, 128, 255),
-                RGB::new(255, 0, 128),
-                RGB::new(0, 128, 255),
-                RGB::new(255, 0, 128),
-                RGB::new(0, 128, 255),
-                RGB::new(255, 0, 128),
-                RGB::new(0, 128, 255),
-                RGB::new(255, 0, 128),
-                RGB::new(0, 128, 255),
-                RGB::new(255, 0, 128),
-                RGB::new(0, 128, 255),
-                RGB::new(255, 0, 128),
-                RGB::new(0, 128, 255),
-                RGB::new(255, 0, 128),
-                RGB::new(0, 128, 255),
+                RGB::new(0, 0, 0),
+                RGB::new(0, 0, 0),
+                RGB::new(0, 0, 0),
+                RGB::new(0, 0, 0),
             ])
             .await;
         }

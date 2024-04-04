@@ -16,11 +16,11 @@ impl RGB {
     }
 }
 
-pub struct RgbLED<'d, T: Pin> {
+pub struct RgbLEDs<'d, T: Pin> {
     output: Output<'d, T>,
 }
 
-impl<'d, T: Pin> RgbLED<'d, T> {
+impl<'d, T: Pin> RgbLEDs<'d, T> {
     pub fn new(pin: T) -> Self {
         let output = Output::new(pin, Level::Low);
         Self { output }
@@ -30,14 +30,14 @@ impl<'d, T: Pin> RgbLED<'d, T> {
         for _ in 0..8 {
             if (data & 0x80) != 0 {
                 self.output.set_high();
-                Timer::after_nanos(SHORT_TIME).await;
-                self.output.set_low();
                 Timer::after_nanos(LONG_TIME).await;
+                self.output.set_low();
+                Timer::after_nanos(SHORT_TIME).await;
             } else {
                 self.output.set_high();
-                Timer::after_nanos(LONG_TIME).await;
-                self.output.set_low();
                 Timer::after_nanos(SHORT_TIME).await;
+                self.output.set_low();
+                Timer::after_nanos(LONG_TIME).await;
             }
 
             data <<= 1;
@@ -50,5 +50,7 @@ impl<'d, T: Pin> RgbLED<'d, T> {
             self.write_byte(color.red).await;
             self.write_byte(color.blue).await;
         }
+
+        Timer::after_millis(50).await;
     }
 }
