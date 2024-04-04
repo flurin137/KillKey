@@ -4,30 +4,30 @@
 #![feature(async_fn_in_trait)]
 #![allow(stable_features, unknown_lints, async_fn_in_trait)]
 
-use core::sync::atomic::{AtomicBool, Ordering};
-
-use defmt::{info, unwrap, warn};
+use defmt::warn;
 use embassy_executor::Spawner;
-use embassy_futures::join::join;
+use embassy_futures::join::join3;
 use embassy_rp::bind_interrupts;
-use embassy_rp::gpio::{AnyPin, Input, Level, Output, Pin, Pull};
+use embassy_rp::gpio::{Input, Pull};
 use embassy_rp::peripherals::USB;
 use embassy_rp::usb::{Driver, InterruptHandler};
+use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
+use embassy_sync::signal::Signal;
 use embassy_time::{Duration, Timer};
 use embassy_usb::class::hid::{HidWriter, ReportId, RequestHandler, State};
 use embassy_usb::control::OutResponse;
 use embassy_usb::Builder;
-use usbd_hid::descriptor::{MouseReport, SerializedDescriptor};
+use usbd_hid::descriptor::{KeyboardReport, MouseReport, SerializedDescriptor};
 use {defmt_rtt as _, panic_probe as _};
 
 bind_interrupts!(struct Irqs {
     USBCTRL_IRQ => InterruptHandler<USB>;
 });
 
-static ENABLE_WIGGLE: AtomicBool = AtomicBool::new(false);
+static KILL: Signal<ThreadModeRawMutex, ()> = Signal::new();
 
 #[embassy_executor::main]
-async fn main(spawner: Spawner) {
+async fn main(_spawner: Spawner) {
     let peripherals = embassy_rp::init(Default::default());
     let driver = Driver::new(peripherals.USB, Irqs);
 
@@ -63,10 +63,7 @@ async fn main(spawner: Spawner) {
         max_packet_size: 8,
     };
 
-    unwrap!(spawner.spawn(io_task(
-        peripherals.PIN_13.degrade(),
-        peripherals.PIN_9.degrade()
-    )));
+    let mut button = Input::new(peripherals.PIN_19, Pull::Up);
 
     let mut writer = HidWriter::<_, 5>::new(&mut builder, &mut state, config);
 
@@ -75,55 +72,31 @@ async fn main(spawner: Spawner) {
     let usb_future = usb.run();
 
     let hid_future = async {
-        let mut y: i8 = 5;
+        KILL.wait().await;
 
-        loop {
-            let enable = ENABLE_WIGGLE.load(Ordering::Relaxed);
-
-            Timer::after(Duration::from_millis(500)).await;
-            if enable {
-                y = -y;
-                let report = MouseReport {
-                    buttons: 0,
-                    x: 0,
-                    y,
-                    wheel: 0,
-                    pan: 0,
-                };
-                match writer.write_serialize(&report).await {
-                    Ok(()) => {}
-                    Err(e) => warn!("Failed to send report: {:?}", e),
-                }
-            }
+        let report = KeyboardReport {
+            keycodes: [0x6c, 0, 0, 0, 0, 0],
+            leds: 0,
+            modifier: 0xe0,
+            reserved: 0,
+        };
+        match writer.write_serialize(&report).await {
+            Ok(()) => {}
+            Err(e) => warn!("Failed to send report: {:?}", e),
         }
     };
 
-    // Run everything concurrently.
-    // If we had made everything `'static` above instead, we could do this using separate tasks instead.
-    join(usb_future, hid_future).await;
-}
+    let button_fut = async {
+        loop {
+            button.wait_for_falling_edge().await;
 
-#[embassy_executor::task]
-async fn io_task(button_pin: AnyPin, led_pin: AnyPin) {
-    let mut button = Input::new(button_pin, Pull::Up);
-    let mut led = Output::new(led_pin, Level::Low);
+            Timer::after(Duration::from_millis(5000)).await;
 
-    let mut value = false;
+            KILL.signal(());
+        }
+    };
 
-    loop {
-        button.wait_for_falling_edge().await;
-        value = !value;
-
-        let level = match value {
-            true => Level::High,
-            false => Level::Low,
-        };
-        led.set_level(level);
-        ENABLE_WIGGLE.store(value, Ordering::Relaxed);
-
-        Timer::after_millis(10).await;
-        button.wait_for_high().await;
-    }
+    join3(usb_future, hid_future, button_fut).await;
 }
 
 struct MyRequestHandler {}
