@@ -4,11 +4,16 @@
 #![feature(async_fn_in_trait)]
 #![allow(stable_features, unknown_lints, async_fn_in_trait)]
 
+mod rgb_led;
+
+use crate::rgb_led::RgbLED;
+use crate::rgb_led::RGB;
 use defmt::{info, warn};
 use embassy_executor::Spawner;
-use embassy_futures::join::join3;
+use embassy_futures::join::join;
+use embassy_futures::join::join4;
 use embassy_rp::bind_interrupts;
-use embassy_rp::gpio::{Input, Pull};
+use embassy_rp::gpio::{Input, Level, Output, Pull};
 use embassy_rp::peripherals::USB;
 use embassy_rp::usb::{Driver, InterruptHandler};
 use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
@@ -17,7 +22,8 @@ use embassy_time::{Duration, Timer};
 use embassy_usb::class::hid::{HidWriter, ReportId, RequestHandler, State};
 use embassy_usb::control::OutResponse;
 use embassy_usb::Builder;
-use usbd_hid::descriptor::{KeyboardReport, MouseReport, SerializedDescriptor};
+use usbd_hid::descriptor::{KeyboardReport, SerializedDescriptor};
+
 use {defmt_rtt as _, panic_probe as _};
 
 bind_interrupts!(struct Irqs {
@@ -72,7 +78,7 @@ async fn main(_spawner: Spawner) {
     let hid_future = async {
         loop {
             KILL.wait().await;
-    
+
             let report = KeyboardReport {
                 keycodes: [0x6c, 0, 0, 0, 0, 0],
                 leds: 0,
@@ -112,7 +118,60 @@ async fn main(_spawner: Spawner) {
         }
     };
 
-    join3(usb_future, hid_future, button_fut).await;
+    let led_fut = async {
+        //const NUM_LEDS: usize = 16;
+        let mut led = RgbLED::new(peripherals.PIN_20);
+
+        loop {
+            Timer::after_secs(1).await;
+
+            led.write_colors(&[
+                RGB::new(0, 128, 255),
+                RGB::new(255, 0, 128),
+                RGB::new(0, 128, 255),
+                RGB::new(255, 0, 128),
+                RGB::new(0, 128, 255),
+                RGB::new(255, 0, 128),
+                RGB::new(0, 128, 255),
+                RGB::new(255, 0, 128),
+                RGB::new(0, 128, 255),
+                RGB::new(255, 0, 128),
+                RGB::new(0, 128, 255),
+                RGB::new(255, 0, 128),
+                RGB::new(0, 128, 255),
+                RGB::new(255, 0, 128),
+                RGB::new(0, 128, 255),
+                RGB::new(255, 0, 128),
+            ])
+            .await;
+
+            info!("sdfhsd");
+
+            Timer::after_secs(1).await;
+
+            led.write_colors(&[
+                RGB::new(255, 0, 128),
+                RGB::new(0, 128, 255),
+                RGB::new(255, 0, 128),
+                RGB::new(0, 128, 255),
+                RGB::new(255, 0, 128),
+                RGB::new(0, 128, 255),
+                RGB::new(255, 0, 128),
+                RGB::new(0, 128, 255),
+                RGB::new(255, 0, 128),
+                RGB::new(0, 128, 255),
+                RGB::new(255, 0, 128),
+                RGB::new(0, 128, 255),
+                RGB::new(255, 0, 128),
+                RGB::new(0, 128, 255),
+                RGB::new(255, 0, 128),
+                RGB::new(0, 128, 255),
+            ])
+            .await;
+        }
+    };
+
+    join(button_fut, led_fut).await;
 }
 
 struct MyRequestHandler {}
