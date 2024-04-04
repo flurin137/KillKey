@@ -4,7 +4,7 @@
 #![feature(async_fn_in_trait)]
 #![allow(stable_features, unknown_lints, async_fn_in_trait)]
 
-use defmt::warn;
+use defmt::{info, warn};
 use embassy_executor::Spawner;
 use embassy_futures::join::join3;
 use embassy_rp::bind_interrupts;
@@ -31,12 +31,10 @@ async fn main(_spawner: Spawner) {
     let peripherals = embassy_rp::init(Default::default());
     let driver = Driver::new(peripherals.USB, Irqs);
 
-    let mut config = embassy_usb::Config::new(0xc0de, 0xcafe);
+    let mut config = embassy_usb::Config::new(0xc0de, 0xaffe);
     config.manufacturer = Some("Fx137");
     config.product = Some("KILL EM ALL");
     config.serial_number = Some("4269");
-    config.max_power = 100;
-    config.max_packet_size_0 = 64;
 
     let mut device_descriptor = [0; 256];
     let mut config_descriptor = [0; 256];
@@ -57,38 +55,56 @@ async fn main(_spawner: Spawner) {
     );
 
     let config = embassy_usb::class::hid::Config {
-        report_descriptor: MouseReport::desc(),
+        report_descriptor: KeyboardReport::desc(),
         request_handler: Some(&request_handler),
         poll_ms: 60,
-        max_packet_size: 8,
+        max_packet_size: 64,
     };
 
     let mut button = Input::new(peripherals.PIN_19, Pull::Up);
 
-    let mut writer = HidWriter::<_, 5>::new(&mut builder, &mut state, config);
+    let mut writer = HidWriter::<_, 8>::new(&mut builder, &mut state, config);
 
     let mut usb = builder.build();
 
     let usb_future = usb.run();
 
     let hid_future = async {
-        KILL.wait().await;
-
-        let report = KeyboardReport {
-            keycodes: [0x6c, 0, 0, 0, 0, 0],
-            leds: 0,
-            modifier: 0xe0,
-            reserved: 0,
-        };
-        match writer.write_serialize(&report).await {
-            Ok(()) => {}
-            Err(e) => warn!("Failed to send report: {:?}", e),
+        loop {
+            KILL.wait().await;
+    
+            let report = KeyboardReport {
+                keycodes: [0x6c, 0, 0, 0, 0, 0],
+                leds: 0,
+                modifier: 0x03,
+                reserved: 0,
+            };
+            match writer.write_serialize(&report).await {
+                Ok(()) => {
+                    info!("Hid repport written");
+                }
+                Err(e) => warn!("Failed to send report: {:?}", e),
+            }
+            let report = KeyboardReport {
+                keycodes: [0, 0, 0, 0, 0, 0],
+                leds: 0,
+                modifier: 0,
+                reserved: 0,
+            };
+            match writer.write_serialize(&report).await {
+                Ok(()) => {
+                    info!("Hid repport written");
+                }
+                Err(e) => warn!("Failed to send report: {:?}", e),
+            }
         }
     };
 
     let button_fut = async {
         loop {
             button.wait_for_falling_edge().await;
+
+            info!("Button Pressed");
 
             Timer::after(Duration::from_millis(5000)).await;
 
