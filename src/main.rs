@@ -23,11 +23,16 @@ use embassy_time::{Duration, Timer};
 use embassy_usb::class::hid::{HidWriter, ReportId, RequestHandler, State};
 use embassy_usb::control::OutResponse;
 use embassy_usb::Builder;
-use smart_leds::RGB8;
+use smart_leds::colors::BLUE;
+use smart_leds::colors::GREEN;
+use smart_leds::colors::ORANGE;
+use smart_leds::colors::YELLOW;
 use usbd_hid::descriptor::{KeyboardReport, SerializedDescriptor};
 
-use crate::rgb_led::wheel;
-use crate::rgb_led::Ws2812;
+use crate::rgb_led::full_red;
+use crate::rgb_led::off;
+use crate::rgb_led::single;
+use crate::rgb_led::LedRing;
 
 use {defmt_rtt as _, panic_probe as _};
 
@@ -72,6 +77,10 @@ async fn main(_spawner: Spawner) {
         poll_ms: 60,
         max_packet_size: 64,
     };
+
+    let Pio {
+        mut common, sm0, ..
+    } = Pio::new(peripherals.PIO0, Irqs);
 
     let mut button = Input::new(peripherals.PIN_19, Pull::Up);
 
@@ -125,31 +134,32 @@ async fn main(_spawner: Spawner) {
     };
 
     let led_fut = async {
-        //const NUM_LEDS: usize = 16;
-
-        let Pio {
-            mut common, sm0, ..
-        } = Pio::new(peripherals.PIO0, Irqs);
-
-        // This is the number of leds in the string. Helpfully, the sparkfun thing plus and adafruit
-        // feather boards for the 2040 both have one built in.
         const NUM_LEDS: usize = 16;
-        let mut data = [RGB8::default(); NUM_LEDS];
+        let mut ws2812 = LedRing::new(&mut common, sm0, peripherals.DMA_CH0, peripherals.PIN_20);
 
-        // Common neopixel pins:
-        // Thing plus: 8
-        // Adafruit Feather: 16;  Adafruit Feather+RFM95: 4
-        let mut ws2812 = Ws2812::new(&mut common, sm0, peripherals.DMA_CH0, peripherals.PIN_20);
-
-        let mut ticker = Ticker::every(Duration::from_millis(10));
+        let mut ticker_fast = Ticker::every(Duration::from_millis(50));
         loop {
-            for j in 0..(256 * 5) {
-                for i in 0..NUM_LEDS {
-                    data[i] = wheel((((i * 256) as u16 / NUM_LEDS as u16 + j as u16) & 255) as u8);
+            for color in [GREEN, BLUE, YELLOW, ORANGE] {
+                for _ in 0..2 {
+                    for j in 0..NUM_LEDS {
+                        ws2812.write(&single(j, color)).await;
+                        ticker_fast.next().await;
+                    }
                 }
-                ws2812.write(&data).await;
+            }
 
-                ticker.next().await;
+            for _ in 0..3 {
+                ws2812.write(&full_red()).await;
+
+                for _ in 0..10 {
+                    ticker_fast.next().await;
+                }
+
+                ws2812.write(&off()).await;
+
+                for _ in 0..10 {
+                    ticker_fast.next().await;
+                }
             }
         }
     };
