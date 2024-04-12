@@ -6,28 +6,34 @@
 
 mod rgb_led;
 
-use crate::rgb_led::RgbLEDs;
-use crate::rgb_led::RGB;
 use defmt::{info, warn};
 use embassy_executor::Spawner;
 use embassy_futures::join::join;
 use embassy_futures::join::join4;
 use embassy_rp::bind_interrupts;
 use embassy_rp::gpio::{Input, Level, Output, Pull};
+use embassy_rp::peripherals::PIO0;
 use embassy_rp::peripherals::USB;
+use embassy_rp::pio::Pio;
 use embassy_rp::usb::{Driver, InterruptHandler};
 use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
 use embassy_sync::signal::Signal;
+use embassy_time::Ticker;
 use embassy_time::{Duration, Timer};
 use embassy_usb::class::hid::{HidWriter, ReportId, RequestHandler, State};
 use embassy_usb::control::OutResponse;
 use embassy_usb::Builder;
+use smart_leds::RGB8;
 use usbd_hid::descriptor::{KeyboardReport, SerializedDescriptor};
+
+use crate::rgb_led::wheel;
+use crate::rgb_led::Ws2812;
 
 use {defmt_rtt as _, panic_probe as _};
 
 bind_interrupts!(struct Irqs {
     USBCTRL_IRQ => InterruptHandler<USB>;
+    PIO0_IRQ_0 => embassy_rp::pio::InterruptHandler<PIO0>;
 });
 
 static KILL: Signal<ThreadModeRawMutex, ()> = Signal::new();
@@ -120,45 +126,31 @@ async fn main(_spawner: Spawner) {
 
     let led_fut = async {
         //const NUM_LEDS: usize = 16;
-        let mut led = RgbLEDs::new(peripherals.PIN_20);
 
+        let Pio {
+            mut common, sm0, ..
+        } = Pio::new(peripherals.PIO0, Irqs);
+
+        // This is the number of leds in the string. Helpfully, the sparkfun thing plus and adafruit
+        // feather boards for the 2040 both have one built in.
+        const NUM_LEDS: usize = 16;
+        let mut data = [RGB8::default(); NUM_LEDS];
+
+        // Common neopixel pins:
+        // Thing plus: 8
+        // Adafruit Feather: 16;  Adafruit Feather+RFM95: 4
+        let mut ws2812 = Ws2812::new(&mut common, sm0, peripherals.DMA_CH0, peripherals.PIN_20);
+
+        let mut ticker = Ticker::every(Duration::from_millis(10));
         loop {
-            Timer::after_secs(1).await;
-            
+            for j in 0..(256 * 5) {
+                for i in 0..NUM_LEDS {
+                    data[i] = wheel((((i * 256) as u16 / NUM_LEDS as u16 + j as u16) & 255) as u8);
+                }
+                ws2812.write(&data).await;
 
-            led.write_colors(&[
-                RGB::new(50, 50, 0),
-                RGB::new(0, 0, 20),
-                RGB::new(50, 50, 0),
-                RGB::new(0, 0, 20),
-                RGB::new(50, 50, 0),
-                RGB::new(0, 0, 20),
-                RGB::new(50, 50, 0),
-                RGB::new(0, 0, 20),
-                RGB::new(50, 50, 0),
-                RGB::new(0, 0, 20),
-                RGB::new(50, 50, 0),
-                RGB::new(0, 0, 20),
-                RGB::new(50, 50, 0),
-                RGB::new(0, 0, 20),
-                RGB::new(50, 50, 0),
-                RGB::new(0, 0, 20),
-                RGB::new(50, 50, 0),
-                RGB::new(0, 0, 20),
-                RGB::new(50, 50, 0),
-                RGB::new(0, 0, 20),
-            ])
-            .await;
-
-            Timer::after_secs(1).await;
-
-            led.write_colors(&[
-                RGB::new(0, 0, 0),
-                RGB::new(0, 0, 0),
-                RGB::new(0, 0, 0),
-                RGB::new(0, 0, 0),
-            ])
-            .await;
+                ticker.next().await;
+            }
         }
     };
 
