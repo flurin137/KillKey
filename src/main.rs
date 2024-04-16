@@ -6,22 +6,23 @@
 
 mod rgb_led;
 
+use crate::rgb_led::full_red;
+use crate::rgb_led::off;
+use crate::rgb_led::single;
+use crate::rgb_led::LedRing;
 use core::sync::atomic::AtomicBool;
 use core::sync::atomic::Ordering;
-
 use defmt::{info, warn};
 use embassy_executor::Spawner;
-use embassy_futures::join::join;
 use embassy_futures::join::join4;
 use embassy_rp::bind_interrupts;
-use embassy_rp::gpio::{Input, Level, Output, Pull};
+use embassy_rp::gpio::{Input, Pull};
 use embassy_rp::peripherals::PIO0;
 use embassy_rp::peripherals::USB;
 use embassy_rp::pio::Instance;
 use embassy_rp::pio::Pio;
 use embassy_rp::usb::{Driver, InterruptHandler};
 use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
-use embassy_sync::mutex::Mutex;
 use embassy_sync::signal::Signal;
 use embassy_time::Ticker;
 use embassy_time::{Duration, Timer};
@@ -33,11 +34,6 @@ use smart_leds::colors::GREEN;
 use smart_leds::colors::ORANGE;
 use smart_leds::colors::YELLOW;
 use usbd_hid::descriptor::{KeyboardReport, SerializedDescriptor};
-
-use crate::rgb_led::full_red;
-use crate::rgb_led::off;
-use crate::rgb_led::single;
-use crate::rgb_led::LedRing;
 
 use {defmt_rtt as _, panic_probe as _};
 
@@ -88,7 +84,7 @@ async fn main(_spawner: Spawner) {
         mut common, sm0, ..
     } = Pio::new(peripherals.PIO0, Irqs);
 
-    let mut button = Input::new(peripherals.PIN_26, Pull::Up);
+    let mut button = Input::new(peripherals.PIN_26, Pull::Down);
 
     let mut writer = HidWriter::<_, 8>::new(&mut builder, &mut state, config);
 
@@ -97,35 +93,37 @@ async fn main(_spawner: Spawner) {
     let usb_future = usb.run();
 
     let hid_future = async {
-        loop {
-            KILL.wait().await;
+        KILL.wait().await;
 
-            let report = KeyboardReport {
-                keycodes: [0x6c, 0, 0, 0, 0, 0],
-                leds: 0,
-                modifier: 0x03,
-                reserved: 0,
-            };
+        let report = KeyboardReport {
+            keycodes: [0x6c, 0, 0, 0, 0, 0],
+            leds: 0,
+            modifier: 0x03,
+            reserved: 0,
+        };
 
-            match writer.write_serialize(&report).await {
-                Ok(()) => {
-                    info!("Hid repport written");
-                }
-                Err(e) => warn!("Failed to send report: {:?}", e),
+        match writer.write_serialize(&report).await {
+            Ok(()) => {
+                info!("Hid repport written");
             }
-            let report = KeyboardReport {
-                keycodes: [0, 0, 0, 0, 0, 0],
-                leds: 0,
-                modifier: 0,
-                reserved: 0,
-            };
-            match writer.write_serialize(&report).await {
-                Ok(()) => {
-                    info!("Hid repport written");
-                }
-                Err(e) => warn!("Failed to send report: {:?}", e),
-            }
+            Err(e) => warn!("Failed to send report: {:?}", e),
         }
+
+        let report = KeyboardReport {
+            keycodes: [0, 0, 0, 0, 0, 0],
+            leds: 0,
+            modifier: 0,
+            reserved: 0,
+        };
+
+        match writer.write_serialize(&report).await {
+            Ok(()) => {
+                info!("Hid repport written");
+            }
+            Err(e) => warn!("Failed to send report: {:?}", e),
+        }
+
+        loop {}
     };
 
     let button_fut = async {
@@ -154,7 +152,7 @@ async fn main(_spawner: Spawner) {
         }
     };
 
-    join(button_fut, led_fut).await;
+    join4(button_fut, led_fut, usb_future, hid_future).await;
 }
 
 async fn start_lights<'a, P: Instance, const S: usize>(
