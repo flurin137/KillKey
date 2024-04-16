@@ -8,9 +8,10 @@ use fixed_macro::fixed;
 use smart_leds::colors::RED;
 use smart_leds::RGB8;
 
-pub struct LedRing<'d, P: Instance, const S: usize, const N: usize> {
+pub struct LedRing<'d, P: Instance, const S: usize> {
     dma: PeripheralRef<'d, AnyChannel>,
     sm: StateMachine<'d, P, S>,
+    pub size: usize
 }
 
 const T1: u8 = 2;
@@ -21,12 +22,12 @@ const T3: u8 = 3;
 // stop bit
 const CYCLES_PER_BIT: u32 = (T1 + T2 + T3) as u32;
 
-impl<'d, P: Instance, const S: usize, const N: usize> LedRing<'d, P, S, N> {
+impl<'d, P: Instance, const S: usize> LedRing<'d, P, S> {
     pub fn new(
         pio: &mut Common<'d, P>,
         mut sm: StateMachine<'d, P, S>,
         dma: impl Peripheral<P = impl Channel> + 'd,
-        pin: impl PioPin,
+        pin: impl PioPin
     ) -> Self {
         into_ref!(dma);
 
@@ -61,13 +62,17 @@ impl<'d, P: Instance, const S: usize, const N: usize> LedRing<'d, P, S, N> {
         Self {
             dma: dma.map_into(),
             sm,
+            size: 16
         }
     }
 
-    pub async fn write(&mut self, colors: &[RGB8; N]) {
+    pub async fn write(&mut self, colors: &[RGB8; 16]) {
+        
+        let colors = colors.map(|channel| channel / 4);
+        
         // Precompute the word bytes from the colors
-        let mut words = [0u32; N];
-        for i in 0..N {
+        let mut words = [0u32; 16];
+        for i in 0..16 {
             let word = (u32::from(colors[i].g) << 24)
                 | (u32::from(colors[i].r) << 16)
                 | (u32::from(colors[i].b) << 8);

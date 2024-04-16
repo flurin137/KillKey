@@ -155,14 +155,13 @@ async fn main(_spawner: Spawner) {
 }
 
 async fn start_lights<'a, P: Instance, const S: usize>(
-    led_ring: &mut LedRing<'a, P, S, 16>,
+    led_ring: &mut LedRing<'a, P, S>,
 ) -> Option<()> {
-    const NUM_LEDS: usize = 16;
     let mut ticker_fast = Ticker::every(Duration::from_millis(50));
 
     for color in [GREEN, BLUE, YELLOW, ORANGE] {
         for _ in 0..2 {
-            for j in 0..NUM_LEDS {
+            for j in 0..led_ring.size {
                 led_ring.write(&single(j, color)).await;
                 ticker_fast.next().await;
 
@@ -189,7 +188,7 @@ async fn start_lights<'a, P: Instance, const S: usize>(
     Some(())
 }
 
-async fn asdf<'a, P: Instance, const S: usize>(led_ring: &mut LedRing<'a, P, S, 16>) -> Option<()> {
+async fn asdf<'a, P: Instance, const S: usize>(led_ring: &mut LedRing<'a, P, S>) -> Option<()> {
     match BUTTON_PRESSED.load(Ordering::Relaxed) {
         true => Some(()),
         false => {
