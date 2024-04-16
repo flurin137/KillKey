@@ -93,37 +93,37 @@ async fn main(_spawner: Spawner) {
     let usb_future = usb.run();
 
     let hid_future = async {
-        KILL.wait().await;
+        loop {
+            KILL.wait().await;
 
-        let report = KeyboardReport {
-            keycodes: [0x6c, 0, 0, 0, 0, 0],
-            leds: 0,
-            modifier: 0x03,
-            reserved: 0,
-        };
+            let report = KeyboardReport {
+                keycodes: [0x6c, 0, 0, 0, 0, 0],
+                leds: 0,
+                modifier: 0x03,
+                reserved: 0,
+            };
 
-        match writer.write_serialize(&report).await {
-            Ok(()) => {
-                info!("Hid repport written");
+            match writer.write_serialize(&report).await {
+                Ok(()) => {
+                    info!("Hid repport written");
+                }
+                Err(e) => warn!("Failed to send report: {:?}", e),
             }
-            Err(e) => warn!("Failed to send report: {:?}", e),
-        }
 
-        let report = KeyboardReport {
-            keycodes: [0, 0, 0, 0, 0, 0],
-            leds: 0,
-            modifier: 0,
-            reserved: 0,
-        };
+            let report = KeyboardReport {
+                keycodes: [0, 0, 0, 0, 0, 0],
+                leds: 0,
+                modifier: 0,
+                reserved: 0,
+            };
 
-        match writer.write_serialize(&report).await {
-            Ok(()) => {
-                info!("Hid repport written");
+            match writer.write_serialize(&report).await {
+                Ok(()) => {
+                    info!("Hid repport written");
+                }
+                Err(e) => warn!("Failed to send report: {:?}", e),
             }
-            Err(e) => warn!("Failed to send report: {:?}", e),
         }
-
-        loop {}
     };
 
     let button_fut = async {
@@ -142,11 +142,10 @@ async fn main(_spawner: Spawner) {
         let mut led_ring = LedRing::new(&mut common, sm0, peripherals.DMA_CH0, peripherals.PIN_20);
 
         loop {
-            if BUTTON_PRESSED.load(Ordering::Relaxed) {
-                if let Some(_) = start_lights(&mut led_ring).await {
-                    KILL.signal(());
-                    loop {}
-                }
+            if BUTTON_PRESSED.load(Ordering::Relaxed) && start_lights(&mut led_ring).await.is_some()
+            {
+                KILL.signal(());
+                Timer::after_secs(20).await;
             }
             Timer::after_millis(20).await;
         }

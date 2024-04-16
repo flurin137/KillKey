@@ -100,8 +100,8 @@ fn create_program(side_set: pio::SideSet) -> pio::Program<32> {
     assembler.nop_with_delay_and_side_set(T2 - 1, 0);
     assembler.bind(&mut wrap_source);
 
-    let program = assembler.assemble_with_wrap(wrap_source, wrap_target);
-    program
+    
+    assembler.assemble_with_wrap(wrap_source, wrap_target)
 }
 
 pub fn full_red() -> [RGB8; 16] {
