@@ -6,6 +6,9 @@
 
 mod rgb_led;
 
+use core::sync::atomic::AtomicBool;
+use core::sync::atomic::Ordering;
+
 use defmt::{info, warn};
 use embassy_executor::Spawner;
 use embassy_futures::join::join;
@@ -14,9 +17,11 @@ use embassy_rp::bind_interrupts;
 use embassy_rp::gpio::{Input, Level, Output, Pull};
 use embassy_rp::peripherals::PIO0;
 use embassy_rp::peripherals::USB;
+use embassy_rp::pio::Instance;
 use embassy_rp::pio::Pio;
 use embassy_rp::usb::{Driver, InterruptHandler};
 use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
+use embassy_sync::mutex::Mutex;
 use embassy_sync::signal::Signal;
 use embassy_time::Ticker;
 use embassy_time::{Duration, Timer};
@@ -42,6 +47,7 @@ bind_interrupts!(struct Irqs {
 });
 
 static KILL: Signal<ThreadModeRawMutex, ()> = Signal::new();
+static BUTTON_PRESSED: AtomicBool = AtomicBool::new(false);
 
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
@@ -82,7 +88,7 @@ async fn main(_spawner: Spawner) {
         mut common, sm0, ..
     } = Pio::new(peripherals.PIO0, Irqs);
 
-    let mut button = Input::new(peripherals.PIN_19, Pull::Up);
+    let mut button = Input::new(peripherals.PIN_26, Pull::Up);
 
     let mut writer = HidWriter::<_, 8>::new(&mut builder, &mut state, config);
 
@@ -100,6 +106,7 @@ async fn main(_spawner: Spawner) {
                 modifier: 0x03,
                 reserved: 0,
             };
+
             match writer.write_serialize(&report).await {
                 Ok(()) => {
                     info!("Hid repport written");
@@ -124,47 +131,75 @@ async fn main(_spawner: Spawner) {
     let button_fut = async {
         loop {
             button.wait_for_falling_edge().await;
+            Timer::after(Duration::from_millis(10)).await;
 
-            info!("Button Pressed");
+            BUTTON_PRESSED.store(true, Ordering::Relaxed);
 
-            Timer::after(Duration::from_millis(5000)).await;
-
-            KILL.signal(());
+            button.wait_for_high().await;
+            BUTTON_PRESSED.store(false, Ordering::Relaxed);
         }
     };
 
     let led_fut = async {
-        const NUM_LEDS: usize = 16;
-        let mut ws2812 = LedRing::new(&mut common, sm0, peripherals.DMA_CH0, peripherals.PIN_20);
+        let mut led_ring = LedRing::new(&mut common, sm0, peripherals.DMA_CH0, peripherals.PIN_20);
 
-        let mut ticker_fast = Ticker::every(Duration::from_millis(50));
         loop {
-            for color in [GREEN, BLUE, YELLOW, ORANGE] {
-                for _ in 0..2 {
-                    for j in 0..NUM_LEDS {
-                        ws2812.write(&single(j, color)).await;
-                        ticker_fast.next().await;
-                    }
+            if BUTTON_PRESSED.load(Ordering::Relaxed) {
+                if let Some(_) = start_lights(&mut led_ring).await {
+                    KILL.signal(());
+                    loop {}
                 }
             }
-
-            for _ in 0..3 {
-                ws2812.write(&full_red()).await;
-
-                for _ in 0..10 {
-                    ticker_fast.next().await;
-                }
-
-                ws2812.write(&off()).await;
-
-                for _ in 0..10 {
-                    ticker_fast.next().await;
-                }
-            }
+            Timer::after_millis(20).await;
         }
     };
 
     join(button_fut, led_fut).await;
+}
+
+async fn start_lights<'a, P: Instance, const S: usize>(
+    led_ring: &mut LedRing<'a, P, S, 16>,
+) -> Option<()> {
+    const NUM_LEDS: usize = 16;
+    let mut ticker_fast = Ticker::every(Duration::from_millis(50));
+
+    for color in [GREEN, BLUE, YELLOW, ORANGE] {
+        for _ in 0..2 {
+            for j in 0..NUM_LEDS {
+                led_ring.write(&single(j, color)).await;
+                ticker_fast.next().await;
+
+                asdf(led_ring).await?;
+            }
+        }
+    }
+
+    for _ in 0..3 {
+        led_ring.write(&full_red()).await;
+
+        for _ in 0..10 {
+            ticker_fast.next().await;
+            asdf(led_ring).await?;
+        }
+
+        led_ring.write(&off()).await;
+
+        for _ in 0..10 {
+            ticker_fast.next().await;
+            asdf(led_ring).await?;
+        }
+    }
+    Some(())
+}
+
+async fn asdf<'a, P: Instance, const S: usize>(led_ring: &mut LedRing<'a, P, S, 16>) -> Option<()> {
+    match BUTTON_PRESSED.load(Ordering::Relaxed) {
+        true => Some(()),
+        false => {
+            led_ring.write(&off()).await;
+            None
+        }
+    }
 }
 
 struct MyRequestHandler {}

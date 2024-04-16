@@ -3,5 +3,8 @@
     "rust-analyzer.check.extraArgs": [
         "--target",
         "thumbv6m-none-eabi"
+    ],
+    "cSpell.words": [
+        "LEDS"
     ]
 }
