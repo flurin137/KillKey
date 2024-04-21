@@ -168,8 +168,7 @@ async fn start_lights<'a, P: Instance, const S: usize>(
             for j in 0..led_ring.size {
                 led_ring.write(&single(j, color)).await;
                 ticker_fast.next().await;
-
-                asdf(led_ring).await?;
+                update_led_on_button_off(led_ring).await?;
             }
         }
     }
@@ -179,20 +178,20 @@ async fn start_lights<'a, P: Instance, const S: usize>(
 
         for _ in 0..10 {
             ticker_fast.next().await;
-            asdf(led_ring).await?;
+            update_led_on_button_off(led_ring).await?;
         }
 
         led_ring.write(&off()).await;
 
         for _ in 0..10 {
             ticker_fast.next().await;
-            asdf(led_ring).await?;
+            update_led_on_button_off(led_ring).await?;
         }
     }
     Some(())
 }
 
-async fn asdf<'a, P: Instance, const S: usize>(led_ring: &mut LedRing<'a, P, S>) -> Option<()> {
+async fn update_led_on_button_off<'a, P: Instance, const S: usize>(led_ring: &mut LedRing<'a, P, S>) -> Option<()> {
     match BUTTON_PRESSED.load(Ordering::Relaxed) {
         true => Some(()),
         false => {
