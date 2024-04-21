@@ -145,7 +145,11 @@ async fn main(_spawner: Spawner) {
             if BUTTON_PRESSED.load(Ordering::Relaxed) && start_lights(&mut led_ring).await.is_some()
             {
                 KILL.signal(());
-                Timer::after_secs(20).await;
+                Timer::after_secs(1).await;
+
+                while BUTTON_PRESSED.load(Ordering::Relaxed) {
+                    Timer::after_millis(20).await;
+                }
             }
             Timer::after_millis(20).await;
         }
