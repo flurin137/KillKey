@@ -191,7 +191,9 @@ async fn start_lights<'a, P: Instance, const S: usize>(
     Some(())
 }
 
-async fn update_led_on_button_off<'a, P: Instance, const S: usize>(led_ring: &mut LedRing<'a, P, S>) -> Option<()> {
+async fn update_led_on_button_off<'a, P: Instance, const S: usize>(
+    led_ring: &mut LedRing<'a, P, S>,
+) -> Option<()> {
     match BUTTON_PRESSED.load(Ordering::Relaxed) {
         true => Some(()),
         false => {

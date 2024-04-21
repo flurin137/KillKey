@@ -11,7 +11,7 @@ use smart_leds::RGB8;
 pub struct LedRing<'d, P: Instance, const S: usize> {
     dma: PeripheralRef<'d, AnyChannel>,
     sm: StateMachine<'d, P, S>,
-    pub size: usize
+    pub size: usize,
 }
 
 const T1: u8 = 2;
@@ -27,7 +27,7 @@ impl<'d, P: Instance, const S: usize> LedRing<'d, P, S> {
         pio: &mut Common<'d, P>,
         mut sm: StateMachine<'d, P, S>,
         dma: impl Peripheral<P = impl Channel> + 'd,
-        pin: impl PioPin
+        pin: impl PioPin,
     ) -> Self {
         into_ref!(dma);
 
@@ -62,14 +62,13 @@ impl<'d, P: Instance, const S: usize> LedRing<'d, P, S> {
         Self {
             dma: dma.map_into(),
             sm,
-            size: 16
+            size: 16,
         }
     }
 
     pub async fn write(&mut self, colors: &[RGB8; 16]) {
-        
         let colors = colors.map(|channel| channel / 4);
-        
+
         // Precompute the word bytes from the colors
         let mut words = [0u32; 16];
         for i in 0..16 {
@@ -105,7 +104,6 @@ fn create_program(side_set: pio::SideSet) -> pio::Program<32> {
     assembler.nop_with_delay_and_side_set(T2 - 1, 0);
     assembler.bind(&mut wrap_source);
 
-    
     assembler.assemble_with_wrap(wrap_source, wrap_target)
 }
 
