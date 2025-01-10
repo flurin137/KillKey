@@ -33,6 +33,7 @@ use smart_leds::colors::BLUE;
 use smart_leds::colors::GREEN;
 use smart_leds::colors::ORANGE;
 use smart_leds::colors::YELLOW;
+use usbd_hid::descriptor::MouseReport;
 use usbd_hid::descriptor::{KeyboardReport, SerializedDescriptor};
 
 use {defmt_rtt as _, panic_probe as _};
@@ -43,7 +44,8 @@ bind_interrupts!(struct Irqs {
 });
 
 static KILL: Signal<ThreadModeRawMutex, ()> = Signal::new();
-static BUTTON_PRESSED: AtomicBool = AtomicBool::new(false);
+static WIGGLE_BUTTON_PRESSED: AtomicBool = AtomicBool::new(false);
+static KILL_BUTTON_PRESSED: AtomicBool = AtomicBool::new(false);
 
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
@@ -53,7 +55,7 @@ async fn main(_spawner: Spawner) {
     let mut config = embassy_usb::Config::new(0xc0de, 0xaffe);
     config.manufacturer = Some("Fx137");
     config.product = Some("KILL EM ALL");
-    config.serial_number = Some("4269");
+    config.serial_number = Some("6942");
 
     let mut device_descriptor = [0; 256];
     let mut config_descriptor = [0; 256];
@@ -61,7 +63,8 @@ async fn main(_spawner: Spawner) {
     let mut control_buf = [0; 64];
     let request_handler = MyRequestHandler {};
 
-    let mut state = State::new();
+    let mut keyboard_state = State::new();
+    let mut mouse_state = State::new();
 
     let mut builder = Builder::new(
         driver,
@@ -73,8 +76,15 @@ async fn main(_spawner: Spawner) {
         &mut control_buf,
     );
 
-    let config = embassy_usb::class::hid::Config {
+    let keyboard_configuration = embassy_usb::class::hid::Config {
         report_descriptor: KeyboardReport::desc(),
+        request_handler: Some(&request_handler),
+        poll_ms: 60,
+        max_packet_size: 64,
+    };
+
+    let mouse_configuration = embassy_usb::class::hid::Config {
+        report_descriptor: MouseReport::desc(),
         request_handler: Some(&request_handler),
         poll_ms: 60,
         max_packet_size: 64,
@@ -86,13 +96,28 @@ async fn main(_spawner: Spawner) {
 
     let mut button = Input::new(peripherals.PIN_26, Pull::Down);
 
-    let mut writer = HidWriter::<_, 8>::new(&mut builder, &mut state, config);
+    let mut keyboard_writer =
+        HidWriter::<_, 8>::new(&mut builder, &mut keyboard_state, keyboard_configuration);
+    let mut mouse_writer =
+        HidWriter::<_, 8>::new(&mut builder, &mut mouse_state, mouse_configuration);
 
     let mut usb = builder.build();
-
     let usb_future = usb.run();
 
-    let hid_future = async {
+    let mouse_hid_future = async {
+        loop {
+            WIGGLE_BUTTON_PRESSED.wait().await;
+
+            let report = KeyboardReport {
+                keycodes: [0x6c, 0, 0, 0, 0, 0],
+                leds: 0,
+                modifier: 0x03,
+                reserved: 0,
+            };
+        }
+    };
+
+    let keyboard_hid_future = async {
         loop {
             KILL.wait().await;
 
@@ -103,7 +128,7 @@ async fn main(_spawner: Spawner) {
                 reserved: 0,
             };
 
-            match writer.write_serialize(&report).await {
+            match keyboard_writer.write_serialize(&report).await {
                 Ok(()) => {
                     info!("Hid repport written");
                 }
@@ -117,7 +142,7 @@ async fn main(_spawner: Spawner) {
                 reserved: 0,
             };
 
-            match writer.write_serialize(&report).await {
+            match keyboard_writer.write_serialize(&report).await {
                 Ok(()) => {
                     info!("Hid repport written");
                 }
@@ -131,10 +156,10 @@ async fn main(_spawner: Spawner) {
             button.wait_for_falling_edge().await;
             Timer::after(Duration::from_millis(10)).await;
 
-            BUTTON_PRESSED.store(true, Ordering::Relaxed);
+            KILL_BUTTON_PRESSED.store(true, Ordering::Relaxed);
 
             button.wait_for_high().await;
-            BUTTON_PRESSED.store(false, Ordering::Relaxed);
+            KILL_BUTTON_PRESSED.store(false, Ordering::Relaxed);
         }
     };
 
@@ -142,12 +167,13 @@ async fn main(_spawner: Spawner) {
         let mut led_ring = LedRing::new(&mut common, sm0, peripherals.DMA_CH0, peripherals.PIN_20);
 
         loop {
-            if BUTTON_PRESSED.load(Ordering::Relaxed) && start_lights(&mut led_ring).await.is_some()
+            if KILL_BUTTON_PRESSED.load(Ordering::Relaxed)
+                && start_lights(&mut led_ring).await.is_some()
             {
                 KILL.signal(());
                 Timer::after_secs(1).await;
 
-                while BUTTON_PRESSED.load(Ordering::Relaxed) {
+                while KILL_BUTTON_PRESSED.load(Ordering::Relaxed) {
                     Timer::after_millis(20).await;
                 }
             }
@@ -155,7 +181,7 @@ async fn main(_spawner: Spawner) {
         }
     };
 
-    join4(button_fut, led_fut, usb_future, hid_future).await;
+    join4(button_fut, led_fut, usb_future, keyboard_hid_future).await;
 }
 
 async fn start_lights<'a, P: Instance, const S: usize>(
@@ -194,7 +220,7 @@ async fn start_lights<'a, P: Instance, const S: usize>(
 async fn update_led_on_button_off<'a, P: Instance, const S: usize>(
     led_ring: &mut LedRing<'a, P, S>,
 ) -> Option<()> {
-    match BUTTON_PRESSED.load(Ordering::Relaxed) {
+    match KILL_BUTTON_PRESSED.load(Ordering::Relaxed) {
         true => Some(()),
         false => {
             led_ring.write(&off()).await;
