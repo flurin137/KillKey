@@ -165,7 +165,7 @@ async fn main(_spawner: Spawner) {
     let kill_handler_future = async {
         let mut led_ring = LedRing::new(&mut common, sm0, peripherals.DMA_CH0, peripherals.PIN_20);
 
-        let abort = || KILL_BUTTON_PRESSED.load(Ordering::Relaxed) == false;
+        let abort = || !KILL_BUTTON_PRESSED.load(Ordering::Relaxed);
 
         loop {
             if KILL_BUTTON_PRESSED.load(Ordering::Relaxed)
