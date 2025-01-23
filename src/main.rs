@@ -197,9 +197,7 @@ async fn main(_spawner: Spawner) {
     .await;
 }
 
-async fn start_lights<'a, P: Instance, const S: usize>(
-    led_ring: &mut LedRing<'a, P, S>,
-) -> Option<()> {
+async fn start_lights<P: Instance, const S: usize>(led_ring: &mut LedRing<'_, P, S>) -> Option<()> {
     let mut ticker_fast = Ticker::every(Duration::from_millis(50));
 
     for color in [GREEN, BLUE, YELLOW, ORANGE] {
@@ -230,8 +228,8 @@ async fn start_lights<'a, P: Instance, const S: usize>(
     Some(())
 }
 
-async fn update_led_on_button_off<'a, P: Instance, const S: usize>(
-    led_ring: &mut LedRing<'a, P, S>,
+async fn update_led_on_button_off<P: Instance, const S: usize>(
+    led_ring: &mut LedRing<'_, P, S>,
 ) -> Option<()> {
     match KILL_BUTTON_PRESSED.load(Ordering::Relaxed) {
         true => Some(()),
