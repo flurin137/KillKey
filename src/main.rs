@@ -55,8 +55,6 @@ static COMMAND: Signal<ThreadModeRawMutex, Command> = Signal::new();
 static ENABLE_WIGGLE: AtomicBool = AtomicBool::new(false);
 
 static KILL_BUTTON_PRESSED: AtomicBool = AtomicBool::new(false);
-static WIGGLE_BUTTON_PRESSED: AtomicBool = AtomicBool::new(false);
-static LOCK_BUTTON_PRESSED: AtomicBool = AtomicBool::new(false);
 
 static KILL_BUTTON_SIGNAL: Signal<ThreadModeRawMutex, bool> = Signal::new();
 static WIGGLE_BUTTON_SIGNAL: Signal<ThreadModeRawMutex, bool> = Signal::new();
@@ -107,15 +105,10 @@ async fn main(_spawner: Spawner) {
         mut common, sm0, ..
     } = Pio::new(peripherals.PIO0, Irqs);
 
-    let lock_button = Input::new(peripherals.PIN_6, Pull::Down);
-    let wiggle_button = Input::new(peripherals.PIN_10, Pull::Down);
-    let kill_button = Input::new(peripherals.PIN_26, Pull::Down);
-
     let keyboard_writer =
         HidWriter::<_, 8>::new(&mut builder, &mut keyboard_state, keyboard_configuration);
 
-    let mut mouse_writer =
-        HidWriter::<_, 8>::new(&mut builder, &mut mouse_state, mouse_configuration);
+    let mouse_writer = HidWriter::<_, 8>::new(&mut builder, &mut mouse_state, mouse_configuration);
 
     let mut keyboard_handler = KeyboardHandler::new(keyboard_writer);
     let mut mouse_handler = MouseHandler::new(mouse_writer);
@@ -123,9 +116,9 @@ async fn main(_spawner: Spawner) {
     let mut usb = builder.build();
     let usb_future = usb.run();
 
-    let mut wiggle_handler = ButtonHandler::new(&WIGGLE_BUTTON_SIGNAL, wiggle_button);
-    let mut lock_handler = ButtonHandler::new(&LOCK_BUTTON_SIGNAL, lock_button);
-    let mut kill_handler = ButtonHandler::new(&KILL_BUTTON_SIGNAL, kill_button);
+    let mut wiggle_handler = ButtonHandler::new(&WIGGLE_BUTTON_SIGNAL, peripherals.PIN_10);
+    let mut lock_handler = ButtonHandler::new(&LOCK_BUTTON_SIGNAL, peripherals.PIN_6);
+    let mut kill_handler = ButtonHandler::new(&KILL_BUTTON_SIGNAL, peripherals.PIN_26);
 
     let mouse_handler_future = async {
         loop {

@@ -1,4 +1,7 @@
-use embassy_rp::gpio::Input;
+use embassy_rp::{
+    gpio::{Input, Pin, Pull},
+    Peripheral,
+};
 use embassy_sync::{blocking_mutex::raw::ThreadModeRawMutex, signal::Signal};
 use embassy_time::{Duration, Timer};
 
@@ -8,7 +11,11 @@ pub struct ButtonHandler<'a> {
 }
 
 impl<'a> ButtonHandler<'a> {
-    pub fn new(signal: &'a Signal<ThreadModeRawMutex, bool>, input: Input<'a>) -> Self {
+    pub fn new(
+        signal: &'a Signal<ThreadModeRawMutex, bool>,
+        pin: impl Peripheral<P = impl Pin> + 'a,
+    ) -> Self {
+        let input = Input::new(pin, Pull::Up);
         Self { signal, input }
     }
 
