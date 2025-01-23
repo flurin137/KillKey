@@ -11,14 +11,16 @@ use crate::rgb_led::full_red;
 use crate::rgb_led::off;
 use crate::rgb_led::single;
 use crate::rgb_led::LedRing;
+use button_handler::Button;
 use button_handler::ButtonHandler;
+use button_handler::Event;
 use core::sync::atomic::AtomicBool;
 use core::sync::atomic::Ordering;
 use embassy_executor::Spawner;
+use embassy_futures::join::join;
 use embassy_futures::join::join5;
 use embassy_futures::join::join_array;
 use embassy_rp::bind_interrupts;
-use embassy_rp::gpio::{Input, Pull};
 use embassy_rp::peripherals::PIO0;
 use embassy_rp::peripherals::USB;
 use embassy_rp::pio::Instance;
@@ -51,14 +53,12 @@ enum Command {
     Lock,
 }
 
-static COMMAND: Signal<ThreadModeRawMutex, Command> = Signal::new();
+static KEYBOARD_COMMAND: Signal<ThreadModeRawMutex, Command> = Signal::new();
 static ENABLE_WIGGLE: AtomicBool = AtomicBool::new(false);
 
 static KILL_BUTTON_PRESSED: AtomicBool = AtomicBool::new(false);
 
-static KILL_BUTTON_SIGNAL: Signal<ThreadModeRawMutex, bool> = Signal::new();
-static WIGGLE_BUTTON_SIGNAL: Signal<ThreadModeRawMutex, bool> = Signal::new();
-static LOCK_BUTTON_SIGNAL: Signal<ThreadModeRawMutex, bool> = Signal::new();
+static BUTTONS_SIGNAL: Signal<ThreadModeRawMutex, (Button, Event)> = Signal::new();
 
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
@@ -116,9 +116,29 @@ async fn main(_spawner: Spawner) {
     let mut usb = builder.build();
     let usb_future = usb.run();
 
-    let mut wiggle_handler = ButtonHandler::new(&WIGGLE_BUTTON_SIGNAL, peripherals.PIN_10);
-    let mut lock_handler = ButtonHandler::new(&LOCK_BUTTON_SIGNAL, peripherals.PIN_6);
-    let mut kill_handler = ButtonHandler::new(&KILL_BUTTON_SIGNAL, peripherals.PIN_26);
+    let mut wiggle_handler =
+        ButtonHandler::new(&BUTTONS_SIGNAL, peripherals.PIN_10, Button::Wiggle);
+    let mut lock_handler = ButtonHandler::new(&BUTTONS_SIGNAL, peripherals.PIN_6, Button::Lock);
+    let mut kill_handler = ButtonHandler::new(&BUTTONS_SIGNAL, peripherals.PIN_26, Button::Kill);
+
+    let signal_handler_future = async {
+        loop {
+            let pressed = BUTTONS_SIGNAL.wait().await;
+
+            match pressed {
+                (Button::Kill, Event::Pressed) => {
+                    KILL_BUTTON_PRESSED.store(true, Ordering::Relaxed)
+                }
+                (Button::Kill, Event::Released) => {
+                    KILL_BUTTON_PRESSED.store(false, Ordering::Relaxed)
+                }
+                (Button::Lock, Event::Pressed) => KEYBOARD_COMMAND.signal(Command::Lock),
+                (Button::Lock, Event::Released) => {}
+                (Button::Wiggle, Event::Pressed) => ENABLE_WIGGLE.store(true, Ordering::Relaxed),
+                (Button::Wiggle, Event::Released) => ENABLE_WIGGLE.store(false, Ordering::Relaxed),
+            }
+        }
+    };
 
     let mouse_handler_future = async {
         loop {
@@ -133,7 +153,7 @@ async fn main(_spawner: Spawner) {
 
     let keyboard_handler_future = async {
         loop {
-            let command = COMMAND.wait().await;
+            let command = KEYBOARD_COMMAND.wait().await;
 
             match command {
                 Command::Kill => keyboard_handler.handle_kill().await,
@@ -142,14 +162,14 @@ async fn main(_spawner: Spawner) {
         }
     };
 
-    let kill_handle_future = async {
+    let kill_handler_future = async {
         let mut led_ring = LedRing::new(&mut common, sm0, peripherals.DMA_CH0, peripherals.PIN_20);
 
         loop {
             if KILL_BUTTON_PRESSED.load(Ordering::Relaxed)
                 && start_lights(&mut led_ring).await.is_some()
             {
-                COMMAND.signal(Command::Kill);
+                KEYBOARD_COMMAND.signal(Command::Kill);
                 Timer::after_secs(1).await;
 
                 while KILL_BUTTON_PRESSED.load(Ordering::Relaxed) {
@@ -160,11 +180,14 @@ async fn main(_spawner: Spawner) {
         }
     };
 
-    join5(
-        usb_future,
-        kill_handle_future,
-        keyboard_handler_future,
-        mouse_handler_future,
+    join(
+        join5(
+            kill_handler_future,
+            keyboard_handler_future,
+            mouse_handler_future,
+            signal_handler_future,
+            usb_future,
+        ),
         join_array([
             wiggle_handler.handle_normally_open(),
             lock_handler.handle_normally_open(),

@@ -5,28 +5,46 @@ use embassy_rp::{
 use embassy_sync::{blocking_mutex::raw::ThreadModeRawMutex, signal::Signal};
 use embassy_time::{Duration, Timer};
 
+#[derive(Clone, Copy)]
+pub enum Button {
+    Kill,
+    Lock,
+    Wiggle,
+}
+
+pub enum Event {
+    Pressed,
+    Released,
+}
+
 pub struct ButtonHandler<'a> {
-    signal: &'a Signal<ThreadModeRawMutex, bool>,
+    signal: &'a Signal<ThreadModeRawMutex, (Button, Event)>,
     input: Input<'a>,
+    button: Button,
 }
 
 impl<'a> ButtonHandler<'a> {
     pub fn new(
-        signal: &'a Signal<ThreadModeRawMutex, bool>,
+        signal: &'a Signal<ThreadModeRawMutex, (Button, Event)>,
         pin: impl Peripheral<P = impl Pin> + 'a,
+        button: Button,
     ) -> Self {
         let input = Input::new(pin, Pull::Up);
-        Self { signal, input }
+        Self {
+            signal,
+            input,
+            button,
+        }
     }
 
     pub async fn handle_normally_open(&mut self) -> ! {
         loop {
             self.input.wait_for_rising_edge().await;
             Timer::after(Duration::from_millis(10)).await;
-            self.signal.signal(true);
+            self.signal.signal((self.button, Event::Pressed));
 
             self.input.wait_for_low().await;
-            self.signal.signal(false);
+            self.signal.signal((self.button, Event::Released));
         }
     }
 }
