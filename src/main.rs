@@ -32,6 +32,7 @@ use embassy_time::Ticker;
 use embassy_time::{Duration, Timer};
 use embassy_usb::class::hid::{HidWriter, State};
 use embassy_usb::Builder;
+use fixed::types::extra::True;
 use keyboard_handler::KeyboardHandler;
 use mouse_handler::MouseHandler;
 use smart_leds::colors::BLUE;
@@ -53,11 +54,10 @@ enum Command {
     Lock,
 }
 
-static KEYBOARD_COMMAND: Signal<ThreadModeRawMutex, Command> = Signal::new();
 static ENABLE_WIGGLE: AtomicBool = AtomicBool::new(false);
-
 static KILL_BUTTON_PRESSED: AtomicBool = AtomicBool::new(false);
 
+static KEYBOARD_COMMAND: Signal<ThreadModeRawMutex, Command> = Signal::new();
 static BUTTONS_SIGNAL: Signal<ThreadModeRawMutex, (Button, Event)> = Signal::new();
 
 #[embassy_executor::main]
@@ -165,9 +165,11 @@ async fn main(_spawner: Spawner) {
     let kill_handler_future = async {
         let mut led_ring = LedRing::new(&mut common, sm0, peripherals.DMA_CH0, peripherals.PIN_20);
 
+        let abort = || KILL_BUTTON_PRESSED.load(Ordering::Relaxed) == false;
+
         loop {
             if KILL_BUTTON_PRESSED.load(Ordering::Relaxed)
-                && start_lights(&mut led_ring).await.is_some()
+                && start_lights(&mut led_ring, &abort).await.is_some()
             {
                 KEYBOARD_COMMAND.signal(Command::Kill);
                 Timer::after_secs(1).await;
@@ -197,7 +199,10 @@ async fn main(_spawner: Spawner) {
     .await;
 }
 
-async fn start_lights<P: Instance, const S: usize>(led_ring: &mut LedRing<'_, P, S>) -> Option<()> {
+async fn start_lights<P: Instance, const S: usize>(
+    led_ring: &mut LedRing<'_, P, S>,
+    abort: &impl Fn() -> bool,
+) -> Option<()> {
     let mut ticker_fast = Ticker::every(Duration::from_millis(50));
 
     for color in [GREEN, BLUE, YELLOW, ORANGE] {
@@ -205,7 +210,7 @@ async fn start_lights<P: Instance, const S: usize>(led_ring: &mut LedRing<'_, P,
             for j in 0..led_ring.size {
                 led_ring.write(&single(j, color)).await;
                 ticker_fast.next().await;
-                update_led_on_button_off(led_ring).await?;
+                disable_light_if_aborted(led_ring, abort).await?;
             }
         }
     }
@@ -215,27 +220,27 @@ async fn start_lights<P: Instance, const S: usize>(led_ring: &mut LedRing<'_, P,
 
         for _ in 0..10 {
             ticker_fast.next().await;
-            update_led_on_button_off(led_ring).await?;
+            disable_light_if_aborted(led_ring, abort).await?;
         }
 
         led_ring.write(&off()).await;
 
         for _ in 0..10 {
             ticker_fast.next().await;
-            update_led_on_button_off(led_ring).await?;
+            disable_light_if_aborted(led_ring, abort).await?;
         }
     }
     Some(())
 }
 
-async fn update_led_on_button_off<P: Instance, const S: usize>(
+async fn disable_light_if_aborted<P: Instance, const S: usize>(
     led_ring: &mut LedRing<'_, P, S>,
+    abort: &impl Fn() -> bool,
 ) -> Option<()> {
-    match KILL_BUTTON_PRESSED.load(Ordering::Relaxed) {
-        true => Some(()),
-        false => {
-            led_ring.write(&off()).await;
-            None
-        }
+    if abort() {
+        led_ring.write(&off()).await;
+        return None;
     }
+
+    Some(())
 }
