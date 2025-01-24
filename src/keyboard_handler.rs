@@ -12,7 +12,6 @@ impl<'a> KeyboardHandler<'a> {
         Self { keyboard_writer }
     }
 
-
     pub async fn handle_lock(&mut self) {
         self.handle_keys([0x6c, 0, 0, 0, 0, 0], 0x03).await
     }
