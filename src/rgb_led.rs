@@ -5,7 +5,6 @@ use embassy_rp::{clocks, into_ref, Peripheral, PeripheralRef};
 use embassy_time::Timer;
 use fixed::types::U24F8;
 use fixed_macro::fixed;
-use smart_leds::colors::RED;
 use smart_leds::RGB8;
 
 pub struct LedRing<'d, P: Instance, const S: usize> {
@@ -105,14 +104,6 @@ fn create_program(side_set: pio::SideSet) -> pio::Program<32> {
     assembler.bind(&mut wrap_source);
 
     assembler.assemble_with_wrap(wrap_source, wrap_target)
-}
-
-pub fn full_red() -> [RGB8; 16] {
-    [RED; 16]
-}
-
-pub fn off() -> [RGB8; 16] {
-    [RGB8::default(); 16]
 }
 
 pub fn single(index: usize, color: RGB8) -> [RGB8; 16] {

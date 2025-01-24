@@ -161,7 +161,7 @@ async fn main(_spawner: Spawner) {
 
         loop {
             if KILL_BUTTON_PRESSED.load(Ordering::Relaxed)
-                && led_handler.start_lights(&abort).await.is_some()
+                && led_handler.stop_sequence(&abort).await.is_ok()
             {
                 KEYBOARD_COMMAND.signal(Command::Kill);
                 Timer::after_secs(1).await;
