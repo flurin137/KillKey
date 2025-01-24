@@ -131,8 +131,9 @@ async fn main(_spawner: Spawner) {
                 (Button::Lock, Event::Pressed) => KEYBOARD_COMMAND.signal(Command::Lock),
                 (Button::Lock, Event::Released) => {}
                 (Button::Wiggle, Event::Pressed) => {
-                    let current_wiggle_state = ENABLE_WIGGLE.load(Ordering::Relaxed);
-                    ENABLE_WIGGLE.store(!current_wiggle_state, Ordering::Relaxed)
+                    let new_wiggle_state = !ENABLE_WIGGLE.load(Ordering::Relaxed);
+                    ENABLE_WIGGLE.store(new_wiggle_state, Ordering::Relaxed);
+                    info!("Set wiggle to {}", new_wiggle_state);
                 }
                 (Button::Wiggle, Event::Released) => {}
             }
