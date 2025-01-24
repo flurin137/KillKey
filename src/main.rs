@@ -133,7 +133,6 @@ async fn main(_spawner: Spawner) {
                 (Button::Wiggle, Event::Pressed) => {
                     let new_wiggle_state = !ENABLE_WIGGLE.load(Ordering::Relaxed);
                     ENABLE_WIGGLE.store(new_wiggle_state, Ordering::Relaxed);
-                    info!("Set wiggle to {}", new_wiggle_state);
                 }
                 (Button::Wiggle, Event::Released) => {}
             }
@@ -146,7 +145,6 @@ async fn main(_spawner: Spawner) {
 
             Timer::after(Duration::from_millis(500)).await;
             if enable {
-                info!("Wiggle");
                 mouse_handler.update_position().await
             }
         }
