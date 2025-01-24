@@ -13,12 +13,10 @@ use button_handler::ButtonHandler;
 use button_handler::Event;
 use core::sync::atomic::AtomicBool;
 use core::sync::atomic::Ordering;
-use defmt::info;
 use embassy_executor::Spawner;
 use embassy_futures::join::join;
 use embassy_futures::join::join3;
 use embassy_futures::join::join5;
-use embassy_futures::join::join_array;
 use embassy_rp::bind_interrupts;
 use embassy_rp::peripherals::PIO0;
 use embassy_rp::peripherals::USB;
@@ -113,8 +111,8 @@ async fn main(_spawner: Spawner) {
     let usb_future = usb.run();
 
     let mut wiggle_handler =
-        ButtonHandler::new(&BUTTONS_SIGNAL, peripherals.PIN_10, Button::Wiggle);
-    let mut lock_handler = ButtonHandler::new(&BUTTONS_SIGNAL, peripherals.PIN_6, Button::Lock);
+        ButtonHandler::new(&BUTTONS_SIGNAL, peripherals.PIN_6, Button::Wiggle);
+    let mut lock_handler = ButtonHandler::new(&BUTTONS_SIGNAL, peripherals.PIN_10, Button::Lock);
     let mut kill_handler = ButtonHandler::new(&BUTTONS_SIGNAL, peripherals.PIN_26, Button::Kill);
 
     let signal_handler_future = async {
