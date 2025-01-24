@@ -13,8 +13,10 @@ use button_handler::ButtonHandler;
 use button_handler::Event;
 use core::sync::atomic::AtomicBool;
 use core::sync::atomic::Ordering;
+use defmt::info;
 use embassy_executor::Spawner;
 use embassy_futures::join::join;
+use embassy_futures::join::join3;
 use embassy_futures::join::join5;
 use embassy_futures::join::join_array;
 use embassy_rp::bind_interrupts;
@@ -128,8 +130,11 @@ async fn main(_spawner: Spawner) {
                 }
                 (Button::Lock, Event::Pressed) => KEYBOARD_COMMAND.signal(Command::Lock),
                 (Button::Lock, Event::Released) => {}
-                (Button::Wiggle, Event::Pressed) => ENABLE_WIGGLE.store(true, Ordering::Relaxed),
-                (Button::Wiggle, Event::Released) => ENABLE_WIGGLE.store(false, Ordering::Relaxed),
+                (Button::Wiggle, Event::Pressed) => {
+                    let current_wiggle_state = ENABLE_WIGGLE.load(Ordering::Relaxed);
+                    ENABLE_WIGGLE.store(!current_wiggle_state, Ordering::Relaxed)
+                }
+                (Button::Wiggle, Event::Released) => {}
             }
         }
     };
@@ -140,6 +145,7 @@ async fn main(_spawner: Spawner) {
 
             Timer::after(Duration::from_millis(500)).await;
             if enable {
+                info!("Wiggle");
                 mouse_handler.update_position().await
             }
         }
@@ -182,11 +188,11 @@ async fn main(_spawner: Spawner) {
             signal_handler_future,
             usb_future,
         ),
-        join_array([
+        join3(
             wiggle_handler.handle_normally_open(),
             lock_handler.handle_normally_open(),
-            kill_handler.handle_normally_open(),
-        ]),
+            kill_handler.handle_normally_closed(),
+        ),
     )
     .await;
 }

@@ -18,7 +18,6 @@ use smart_leds::RGB8;
 
 pub struct LedHandler<'a, P: Instance, const S: usize> {
     led_ring: LedRing<'a, P, S>,
-    ticker: Ticker,
 }
 
 impl<'a, P: Instance, const S: usize> LedHandler<'a, P, S> {
@@ -29,9 +28,8 @@ impl<'a, P: Instance, const S: usize> LedHandler<'a, P, S> {
         pin: impl PioPin,
     ) -> Self {
         let led_ring = LedRing::new(pio, sm, dma, pin);
-        let ticker = Ticker::every(Duration::from_millis(50));
 
-        Self { led_ring, ticker }
+        Self { led_ring }
     }
 
     pub async fn stop_sequence(&mut self, abort: &impl Fn() -> bool) -> Result<(), ()> {
@@ -49,9 +47,10 @@ impl<'a, P: Instance, const S: usize> LedHandler<'a, P, S> {
     }
 
     pub async fn circle(&mut self, color: RGB<u8>, abort: &impl Fn() -> bool) -> Result<(), ()> {
+        let mut ticker = Ticker::every(Duration::from_millis(50));
         for j in 0..self.led_ring.size {
             self.led_ring.write(&single(j, color)).await;
-            self.ticker.next().await;
+            ticker.next().await;
             self.disable_light_if_aborted(abort).await?;
         }
 
@@ -59,17 +58,19 @@ impl<'a, P: Instance, const S: usize> LedHandler<'a, P, S> {
     }
 
     pub async fn blink(&mut self, color: RGB<u8>, abort: &impl Fn() -> bool) -> Result<(), ()> {
+        let mut ticker = Ticker::every(Duration::from_millis(50));
+
         self.led_ring.write(&full_color(color)).await;
 
         for _ in 0..10 {
-            self.ticker.next().await;
+            ticker.next().await;
             self.disable_light_if_aborted(abort).await?;
         }
 
         self.led_ring.write(&off()).await;
 
         for _ in 0..10 {
-            self.ticker.next().await;
+            ticker.next().await;
             self.disable_light_if_aborted(abort).await?;
         }
 
