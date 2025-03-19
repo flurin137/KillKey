@@ -1,7 +1,7 @@
 use defmt::{info, warn};
 use embassy_rp::{peripherals::USB, usb::Driver};
 use embassy_usb::class::hid::HidWriter;
-use usbd_hid::descriptor::{KeyboardReport, KeyboardUsage};
+use usbd_hid::descriptor::{KeyboardReport, KeyboardUsage, MediaKey, MediaKeyboardReport};
 
 pub struct KeyboardHandler<'a> {
     keyboard_writer: HidWriter<'a, Driver<'a, USB>, 8>,
@@ -13,6 +13,8 @@ impl<'a> KeyboardHandler<'a> {
     }
 
     pub async fn handle_lock(&mut self) {
+        self.handle_media_keys(MediaKey::Stop).await;
+
         self.handle_keys([KeyboardUsage::KeyboardLl as u8, 0, 0, 0, 0, 0], 0x08)
             .await
     }
@@ -46,7 +48,20 @@ impl<'a> KeyboardHandler<'a> {
 
         match self.keyboard_writer.write_serialize(&report).await {
             Ok(()) => {
-                info!("Hid repport written");
+                info!("Hid report written");
+            }
+            Err(e) => warn!("Failed to send report: {:?}", e),
+        }
+    }
+
+    async fn handle_media_keys(&mut self, key: MediaKey) {
+        let report = MediaKeyboardReport {
+            usage_id: key as u16,
+        };
+
+        match self.keyboard_writer.write_serialize(&report).await {
+            Ok(()) => {
+                info!("Hid report written");
             }
             Err(e) => warn!("Failed to send report: {:?}", e),
         }
