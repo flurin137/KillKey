@@ -1,7 +1,9 @@
 use defmt::{info, warn};
 use embassy_rp::{peripherals::USB, usb::Driver};
 use embassy_usb::class::hid::HidWriter;
-use usbd_hid::descriptor::{KeyboardReport, KeyboardUsage, MediaKey, MediaKeyboardReport};
+use usbd_hid::descriptor::{
+    AsInputReport, KeyboardReport, KeyboardUsage, MediaKey, MediaKeyboardReport,
+};
 
 pub struct KeyboardHandler<'a> {
     keyboard_writer: HidWriter<'a, Driver<'a, USB>, 8>,
@@ -32,12 +34,7 @@ impl<'a> KeyboardHandler<'a> {
             reserved: 0,
         };
 
-        match self.keyboard_writer.write_serialize(&report).await {
-            Ok(()) => {
-                info!("Hid repport written");
-            }
-            Err(e) => warn!("Failed to send report: {:?}", e),
-        }
+        self.write(report).await;
 
         let report = KeyboardReport {
             keycodes: [0, 0, 0, 0, 0, 0],
@@ -46,12 +43,7 @@ impl<'a> KeyboardHandler<'a> {
             reserved: 0,
         };
 
-        match self.keyboard_writer.write_serialize(&report).await {
-            Ok(()) => {
-                info!("Hid report written");
-            }
-            Err(e) => warn!("Failed to send report: {:?}", e),
-        }
+        self.write(report).await;
     }
 
     async fn handle_media_keys(&mut self, key: MediaKey) {
@@ -59,6 +51,13 @@ impl<'a> KeyboardHandler<'a> {
             usage_id: key as u16,
         };
 
+        self.write(report).await;
+    }
+
+    async fn write<T>(&mut self, report: T)
+    where
+        T: AsInputReport,
+    {
         match self.keyboard_writer.write_serialize(&report).await {
             Ok(()) => {
                 info!("Hid report written");
